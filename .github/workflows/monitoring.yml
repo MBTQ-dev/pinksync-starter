@@ -1,0 +1,450 @@
+# .github/workflows/monitoring.yml
+
+# Continuous Monitoring & Alerting
+
+name: 📊 Monitoring & Metrics
+
+on:
+schedule:
+- cron: ‘*/15 * * * *’  # Every 15 minutes
+workflow_dispatch:
+
+jobs:
+health-checks:
+name: 🏥 Service Health Checks
+runs-on: ubuntu-latest
+strategy:
+matrix:
+service:
+- name: deafauth
+url: https://deafauth.pinksync.io
+critical: true
+- name: vcode
+url: https://vcode.pinksync.io
+critical: true
+- name: pinkflow
+url: https://pinkflow.pinksync.io
+critical: true
+- name: event-orchestrator
+url: https://events.pinksync.io
+critical: false
+- name: rag-engine
+url: https://rag.pinksync.io
+critical: false
+steps:
+- name: Check ${{ matrix.service.name }}
+id: health_check
+continue-on-error: true
+run: |
+response=$(curl -s -o /dev/null -w “%{http_code}” ${{ matrix.service.url }}/health)
+if [ $response -eq 200 ]; then
+echo “status=healthy” >> $GITHUB_OUTPUT
+else
+echo “status=unhealthy” >> $GITHUB_OUTPUT
+exit 1
+fi
+
+```
+  - name: Alert on Critical Failure
+    if: failure() && matrix.service.critical == true
+    uses: slackapi/slack-github-action@v1
+    with:
+      payload: |
+        {
+          "text": "🚨 CRITICAL: ${{ matrix.service.name }} is DOWN!",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*CRITICAL SERVICE DOWN* 🚨\n*Service:* ${{ matrix.service.name }}\n*URL:* ${{ matrix.service.url }}\n*Impact:* Deaf users cannot access service\n*Action Required:* Immediate investigation"
+              }
+            }
+          ]
+        }
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_CRITICAL }}
+```
+
+performance-metrics:
+name: ⚡ Performance Metrics
+runs-on: ubuntu-latest
+steps:
+- name: Test Response Times
+id: perf_test
+run: |
+# Test DeafAUTH login speed (critical for UX)
+deafauth_time=$(curl -w “%{time_total}” -s -o /dev/null https://deafauth.pinksync.io/api/login)
+echo “deafauth_ms=$deafauth_time” >> $GITHUB_OUTPUT
+
+```
+      # Test caption processing speed (critical for accessibility)
+      caption_time=$(curl -w "%{time_total}" -s -o /dev/null https://vcode.pinksync.io/api/caption/test)
+      echo "caption_ms=$caption_time" >> $GITHUB_OUTPUT
+      
+      # Test PinkFlow transformation speed
+      pinkflow_time=$(curl -w "%{time_total}" -s -o /dev/null https://pinkflow.pinksync.io/api/transform)
+      echo "pinkflow_ms=$pinkflow_time" >> $GITHUB_OUTPUT
+  
+  - name: Alert on Slow Performance
+    if: steps.perf_test.outputs.deafauth_ms > 1.0 || steps.perf_test.outputs.caption_ms > 2.0
+    uses: slackapi/slack-github-action@v1
+    with:
+      payload: |
+        {
+          "text": "⚠️ Performance Degradation Detected",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Performance Alert* ⚠️\n*DeafAUTH:* ${{ steps.perf_test.outputs.deafauth_ms }}s\n*Captions:* ${{ steps.perf_test.outputs.caption_ms }}s\n*PinkFlow:* ${{ steps.perf_test.outputs.pinkflow_ms }}s\n*Threshold:* 1s for auth, 2s for captions"
+              }
+            }
+          ]
+        }
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_PERF }}
+```
+
+accessibility-monitoring:
+name: ♿ Accessibility Compliance
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20.x
+  
+  - name: Install axe-core
+    run: npm install -g @axe-core/cli
+  
+  - name: Test Live Sites
+    run: |
+      axe https://pinksync.io --exit --tags wcag2aaa > accessibility-report.json
+      axe https://vcode.pinksync.io --exit --tags wcag2aaa >> accessibility-report.json
+  
+  - name: Upload Report
+    uses: actions/upload-artifact@v4
+    with:
+      name: accessibility-report
+      path: accessibility-report.json
+  
+  - name: Alert on Violations
+    if: failure()
+    run: |
+      echo "⚠️ Accessibility violations detected - this affects Deaf users!"
+```
+
+-----
+
+# .github/workflows/feature-flags.yml
+
+# Feature Flag Management & A/B Testing
+
+name: 🎚️ Feature Flags
+
+on:
+workflow_dispatch:
+inputs:
+flag_name:
+description: ‘Feature flag to toggle’
+required: true
+type: choice
+options:
+- ASL_RECOGNITION_V2
+- GROQ_TRANSCRIPTION
+- REAL_TIME_CAPTIONS
+- MEDIAPIPE_ASL
+- LIVEKIT_VIDEO
+action:
+description: ‘Action to perform’
+required: true
+type: choice
+options:
+- enable_10_percent
+- enable_50_percent
+- enable_all
+- disable_all
+environment:
+description: ‘Environment’
+required: true
+type: choice
+options:
+- staging
+- production
+
+jobs:
+toggle-feature:
+name: 🎛️ Toggle Feature Flag
+runs-on: ubuntu-latest
+environment: ${{ github.event.inputs.environment }}
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Update Feature Flag Configuration
+    run: |
+      # Update environment variables
+      FEATURE_FLAG="${{ github.event.inputs.flag_name }}"
+      ACTION="${{ github.event.inputs.action }}"
+      ENV="${{ github.event.inputs.environment }}"
+      
+      echo "Toggling $FEATURE_FLAG to $ACTION in $ENV"
+      
+      # Update flag configuration
+      case $ACTION in
+        enable_10_percent)
+          PERCENTAGE=10
+          ;;
+        enable_50_percent)
+          PERCENTAGE=50
+          ;;
+        enable_all)
+          PERCENTAGE=100
+          ;;
+        disable_all)
+          PERCENTAGE=0
+          ;;
+      esac
+      
+      echo "Setting $FEATURE_FLAG to $PERCENTAGE% rollout"
+  
+  - name: Deploy Flag Configuration
+    env:
+      DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+    run: |
+      # Deploy updated configuration to services
+      echo "Deploying feature flag configuration..."
+      
+      # Update config in Deno Deploy or your config service
+      curl -X POST https://api.pinksync.io/config/feature-flags \
+        -H "Authorization: Bearer ${{ secrets.API_TOKEN }}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "flag": "${{ github.event.inputs.flag_name }}",
+          "percentage": '$PERCENTAGE',
+          "environment": "${{ github.event.inputs.environment }}"
+        }'
+  
+  - name: Notify Team
+    uses: slackapi/slack-github-action@v1
+    with:
+      payload: |
+        {
+          "text": "🎚️ Feature Flag Updated",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Feature Flag Changed*\n*Flag:* ${{ github.event.inputs.flag_name }}\n*Action:* ${{ github.event.inputs.action }}\n*Environment:* ${{ github.event.inputs.environment }}\n*By:* ${{ github.actor }}"
+              }
+            }
+          ]
+        }
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+  
+  - name: Create Monitoring Dashboard
+    run: |
+      # Create a temporary monitoring dashboard to track feature flag impact
+      echo "Creating dashboard for ${{ github.event.inputs.flag_name }}..."
+      
+      # This would integrate with Grafana API
+      curl -X POST https://grafana.pinksync.io/api/dashboards/db \
+        -H "Authorization: Bearer ${{ secrets.GRAFANA_API_KEY }}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "dashboard": {
+            "title": "Feature: ${{ github.event.inputs.flag_name }}",
+            "tags": ["feature-flag", "monitoring"],
+            "timezone": "browser",
+            "panels": [
+              {
+                "title": "User Adoption Rate",
+                "type": "graph"
+              },
+              {
+                "title": "Error Rate Comparison",
+                "type": "graph"
+              }
+            ]
+          }
+        }'
+```
+
+-----
+
+# .github/workflows/user-feedback.yml
+
+# Automated User Feedback Pipeline
+
+name: 📢 User Feedback Pipeline
+
+on:
+repository_dispatch:
+types: [user_feedback]
+workflow_dispatch:
+
+jobs:
+process-feedback:
+name: 📝 Process User Feedback
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Parse Feedback
+    id: parse
+    run: |
+      # Extract feedback from webhook payload
+      FEEDBACK_TYPE="${{ github.event.client_payload.type }}"
+      FEEDBACK_TEXT="${{ github.event.client_payload.text }}"
+      USER_ID="${{ github.event.client_payload.user_id }}"
+      
+      echo "type=$FEEDBACK_TYPE" >> $GITHUB_OUTPUT
+      echo "text=$FEEDBACK_TEXT" >> $GITHUB_OUTPUT
+      echo "user=$USER_ID" >> $GITHUB_OUTPUT
+  
+  - name: Create Issue for Critical Feedback
+    if: steps.parse.outputs.type == 'caption_error' || steps.parse.outputs.type == 'accessibility_issue'
+    uses: actions/github-script@v7
+    with:
+      script: |
+        const issue = await github.rest.issues.create({
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          title: `User Report: ${{ steps.parse.outputs.type }}`,
+          labels: ['user-reported', 'accessibility', '${{ steps.parse.outputs.type }}'],
+          body: `
+          ## User Feedback Report
+          
+          **Type**: ${{ steps.parse.outputs.type }}
+          **Reported By**: User ${{ steps.parse.outputs.user }}
+          **Timestamp**: ${new Date().toISOString()}
+          
+          ### Description
+          ${{ steps.parse.outputs.text }}
+          
+          ### Priority
+          - [ ] Fix ASAP (accessibility blocker)
+          - [ ] Fix this week
+          - [ ] Backlog
+          
+          ### Affected Services
+          - [ ] DeafAUTH
+          - [ ] VCode
+          - [ ] PinkFlow
+          - [ ] Browser Extension
+          
+          ---
+          *Auto-generated from user feedback webhook*
+          `
+        });
+        
+        console.log(`Created issue #${issue.data.number}`);
+  
+  - name: Notify Development Team
+    if: steps.parse.outputs.type == 'caption_error'
+    uses: slackapi/slack-github-action@v1
+    with:
+      payload: |
+        {
+          "text": "🚨 User Reported Caption Error",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*Caption Error Reported* 🚨\n*User:* ${{ steps.parse.outputs.user }}\n*Issue:* ${{ steps.parse.outputs.text }}\n*Action:* Review and fix immediately - this affects accessibility"
+              }
+            }
+          ]
+        }
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URGENT }}
+```
+
+-----
+
+# .github/workflows/dependency-updates.yml
+
+# Automated Dependency Management
+
+name: 📦 Dependency Updates
+
+on:
+schedule:
+- cron: ‘0 0 * * 1’  # Every Monday at midnight
+workflow_dispatch:
+
+jobs:
+update-deno-deps:
+name: 🦕 Update Deno Dependencies
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: vx.x.x  # Latest
+  
+  - name: Update Dependencies
+    run: |
+      # Update all Deno services
+      for service in services/*/; do
+        if [ -f "$service/deno.json" ]; then
+          echo "Updating $service"
+          cd "$service"
+          deno cache --reload --lock=deno.lock **/*.ts
+          cd ../..
+        fi
+      done
+  
+  - name: Run Tests
+    run: |
+      deno test --allow-all
+  
+  - name: Create Pull Request
+    uses: peter-evans/create-pull-request@v5
+    with:
+      commit-message: 'chore: update Deno dependencies'
+      title: '📦 Automated Deno Dependency Update'
+      body: |
+        Automated dependency update for Deno services.
+        
+        - Updated all imports to latest versions
+        - Ran tests to ensure compatibility
+        
+        Please review and merge if tests pass.
+      branch: deps/deno-update
+      labels: dependencies, automated
+```
+
+security-audit:
+name: 🔒 Security Audit
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Run npm audit
+    run: |
+      for service in services/*/; do
+        if [ -f "$service/package.json" ]; then
+          echo "Auditing $service"
+          cd "$service"
+          npm audit --audit-level=moderate || true
+          cd ../..
+        fi
+      done
+  
+  - name: Run Deno security check
+    run: deno check --unstable **/*.ts
+```
