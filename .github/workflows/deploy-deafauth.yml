@@ -1,0 +1,596 @@
+# .github/workflows/deploy-deafauth.yml
+
+# DeafAUTH Service - Identity & Authentication Gateway
+
+name: 🔐 DeafAUTH Deploy
+
+on:
+push:
+branches: [main, feat-Pinksync-AI]
+paths:
+- ‘services/deafauth/**’
+- ’deno-deafauth/**’
+- ‘.github/workflows/deploy-deafauth.yml’
+pull_request:
+paths:
+- ‘services/deafauth/**’
+- ’deno-deafauth/**’
+
+env:
+DENO_VERSION: 1.45.0
+SERVICE_NAME: deafauth
+
+jobs:
+
+# Stage 1: Lint & Type Check
+
+validate:
+name: 🔍 Validate Code
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Cache Deno dependencies
+    uses: actions/cache@v3
+    with:
+      path: ~/.cache/deno
+      key: deno-${{ hashFiles('deno.json', 'deno.lock') }}
+  
+  - name: Lint Code
+    run: |
+      cd services/deafauth
+      deno lint
+  
+  - name: Format Check
+    run: |
+      cd services/deafauth
+      deno fmt --check
+  
+  - name: Type Check
+    run: |
+      cd services/deafauth
+      deno check **/*.ts
+```
+
+# Stage 2: Security Scan
+
+security:
+name: 🛡️ Security Scan
+runs-on: ubuntu-latest
+needs: validate
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Run Trivy vulnerability scanner
+    uses: aquasecurity/trivy-action@master
+    with:
+      scan-type: 'fs'
+      scan-ref: 'services/deafauth'
+      severity: 'CRITICAL,HIGH'
+      exit-code: '1'
+  
+  - name: Check for secrets
+    uses: trufflesecurity/trufflehog@main
+    with:
+      path: services/deafauth
+      base: main
+      head: HEAD
+```
+
+# Stage 3: Test Suite
+
+test:
+name: 🧪 Test Suite
+runs-on: ubuntu-latest
+needs: validate
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Run Unit Tests
+    run: |
+      cd services/deafauth
+      deno test --allow-all --coverage=coverage
+  
+  - name: Generate Coverage Report
+    run: |
+      cd services/deafauth
+      deno coverage coverage --lcov > coverage.lcov
+  
+  - name: Upload Coverage to Codecov
+    uses: codecov/codecov-action@v3
+    with:
+      files: services/deafauth/coverage.lcov
+      flags: deafauth
+      name: deafauth-coverage
+```
+
+# Stage 4: Build & Deploy
+
+deploy:
+name: 🚀 Deploy to Production
+runs-on: ubuntu-latest
+needs: [validate, security, test]
+if: github.ref == ‘refs/heads/main’ || github.ref == ‘refs/heads/feat-Pinksync-AI’
+environment:
+name: production
+url: https://deafauth.pinksync.io
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Deploy to Deno Deploy
+    uses: denoland/deployctl@v1
+    with:
+      project: pinksync-deafauth
+      entrypoint: services/deafauth/server.ts
+      root: services/deafauth
+    env:
+      DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+  
+  - name: Health Check
+    run: |
+      sleep 10
+      curl -f https://deafauth.pinksync.io/health || exit 1
+  
+  - name: Notify Deployment Success
+    if: success()
+    uses: slackapi/slack-github-action@v1
+    with:
+      payload: |
+        {
+          "text": "🔐 DeafAUTH deployed successfully!",
+          "blocks": [
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "*DeafAUTH Service Deployed* ✅\n*Commit:* ${{ github.sha }}\n*By:* ${{ github.actor }}\n*URL:* https://deafauth.pinksync.io"
+              }
+            }
+          ]
+        }
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+```
+
+-----
+
+# .github/workflows/deploy-vcode.yml
+
+# VCode Service - Video Communication & AI Transcription
+
+name: 🎥 VCode Deploy
+
+on:
+push:
+branches: [vcode, main]
+paths:
+- ‘services/vcode/**’
+- ’services/ai-service/**’
+- ‘.github/workflows/deploy-vcode.yml’
+pull_request:
+paths:
+- ‘services/vcode/**’
+
+env:
+DENO_VERSION: 1.45.0
+NODE_VERSION: 20.x
+
+jobs:
+validate:
+name: 🔍 Validate
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js (for AI service)
+    uses: actions/setup-node@v4
+    with:
+      node-version: ${{ env.NODE_VERSION }}
+      cache: 'npm'
+      cache-dependency-path: services/ai-service/package-lock.json
+  
+  - name: Install Dependencies
+    run: |
+      cd services/ai-service
+      npm ci
+  
+  - name: Lint & Type Check
+    run: |
+      cd services/ai-service
+      npm run lint
+      npm run type-check
+```
+
+test:
+name: 🧪 Test VCode & AI Services
+runs-on: ubuntu-latest
+needs: validate
+services:
+postgres:
+image: postgres:15
+env:
+POSTGRES_PASSWORD: postgres
+POSTGRES_DB: vcode_test
+options: >-
+–health-cmd pg_isready
+–health-interval 10s
+–health-timeout 5s
+–health-retries 5
+ports:
+- 5432:5432
+
+```
+  redis:
+    image: redis:7-alpine
+    options: >-
+      --health-cmd "redis-cli ping"
+      --health-interval 10s
+      --health-timeout 5s
+      --health-retries 5
+    ports:
+      - 6379:6379
+
+steps:
+  - uses: actions/checkout@v4
+  
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: ${{ env.NODE_VERSION }}
+  
+  - name: Install Dependencies
+    run: |
+      cd services/ai-service
+      npm ci
+  
+  - name: Run Integration Tests
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vcode_test
+      REDIS_URL: redis://localhost:6379
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    run: |
+      cd services/ai-service
+      npm test -- --coverage
+  
+  - name: Test Groq AI Connection
+    env:
+      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+    run: |
+      cd services/ai-service
+      node test-groq-connection.js
+```
+
+deploy-staging:
+name: 🚧 Deploy to Staging
+runs-on: ubuntu-latest
+needs: [validate, test]
+if: github.event_name == ‘pull_request’
+environment:
+name: staging
+url: https://vcode-staging.pinksync.io
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Deploy to Staging
+    run: |
+      echo "Deploying to staging environment..."
+      # Add your staging deployment commands here
+  
+  - name: Comment PR with Staging URL
+    uses: actions/github-script@v7
+    with:
+      script: |
+        github.rest.issues.createComment({
+          issue_number: context.issue.number,
+          owner: context.repo.owner,
+          repo: context.repo.repo,
+          body: '🚧 **Staging Deployment Ready**\n\nTest at: https://vcode-staging.pinksync.io\n\nCommit: ${{ github.sha }}'
+        })
+```
+
+deploy-production:
+name: 🚀 Deploy to Production
+runs-on: ubuntu-latest
+needs: [validate, test]
+if: github.ref == ‘refs/heads/vcode’ || github.ref == ‘refs/heads/main’
+environment:
+name: production
+url: https://vcode.pinksync.io
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: ${{ env.NODE_VERSION }}
+  
+  - name: Build Production Assets
+    run: |
+      cd services/ai-service
+      npm ci --production
+      npm run build
+  
+  - name: Deploy to Production
+    env:
+      DEPLOY_KEY: ${{ secrets.VCODE_DEPLOY_KEY }}
+    run: |
+      # Deploy to your production environment
+      # Could be Vercel, Deno Deploy, or custom server
+      echo "Deploying VCode to production..."
+  
+  - name: Run Post-Deployment Health Checks
+    run: |
+      sleep 15
+      curl -f https://vcode.pinksync.io/health || exit 1
+      curl -f https://vcode.pinksync.io/api/ai/health || exit 1
+  
+  - name: Create Deployment Tag
+    run: |
+      git tag "vcode-$(date +%Y%m%d-%H%M%S)"
+      git push origin --tags
+```
+
+-----
+
+# .github/workflows/deploy-pinkflow.yml
+
+# PinkFlow Service - Real-time Accessibility Engine
+
+name: 🌊 PinkFlow Deploy
+
+on:
+push:
+branches: [main, feat-Pinksync-AI]
+paths:
+- ‘services/pinkflow/**’
+- ‘.github/workflows/deploy-pinkflow.yml’
+
+env:
+DENO_VERSION: 1.45.0
+
+jobs:
+validate:
+name: 🔍 Validate
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Lint & Type Check
+    run: |
+      cd services/pinkflow
+      deno lint
+      deno check **/*.ts
+```
+
+test:
+name: 🧪 Test Accessibility Transformations
+runs-on: ubuntu-latest
+needs: validate
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Run Unit Tests
+    run: |
+      cd services/pinkflow
+      deno test --allow-all --coverage=coverage
+  
+  - name: Test Caption Transformation
+    run: |
+      cd services/pinkflow
+      deno run --allow-all tests/caption-transform.test.ts
+  
+  - name: Test Visual Enhancement
+    run: |
+      cd services/pinkflow
+      deno run --allow-all tests/visual-enhancement.test.ts
+```
+
+accessibility-check:
+name: ♿ Accessibility Validation
+runs-on: ubuntu-latest
+needs: validate
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node for axe-core
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20.x
+  
+  - name: Install axe-core
+    run: npm install -g @axe-core/cli
+  
+  - name: Run Accessibility Tests
+    run: |
+      # Test the PinkFlow UI components
+      axe services/pinkflow/public/**/*.html --exit
+```
+
+deploy:
+name: 🚀 Deploy
+runs-on: ubuntu-latest
+needs: [validate, test, accessibility-check]
+if: github.ref == ‘refs/heads/main’ || github.ref == ‘refs/heads/feat-Pinksync-AI’
+environment:
+name: production
+url: https://pinkflow.pinksync.io
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Deno
+    uses: denoland/setup-deno@v1
+    with:
+      deno-version: ${{ env.DENO_VERSION }}
+  
+  - name: Deploy to Deno Deploy
+    uses: denoland/deployctl@v1
+    with:
+      project: pinksync-pinkflow
+      entrypoint: services/pinkflow/server.ts
+      root: services/pinkflow
+    env:
+      DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
+  
+  - name: Health Check
+    run: |
+      sleep 10
+      curl -f https://pinkflow.pinksync.io/health || exit 1
+```
+
+-----
+
+# .github/workflows/deploy-extension.yml
+
+# Browser Extension Build & Publish
+
+name: 🧩 Extension Deploy
+
+on:
+push:
+branches: [main, feat-Pinksync-AI]
+paths:
+- ‘extension/**’
+- ‘.github/workflows/deploy-extension.yml’
+workflow_dispatch:
+inputs:
+publish_store:
+description: ‘Publish to Chrome Web Store’
+required: true
+type: boolean
+default: false
+
+jobs:
+build:
+name: 🔨 Build Extension
+runs-on: ubuntu-latest
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20.x
+  
+  - name: Install Dependencies
+    run: |
+      cd extension
+      npm ci
+  
+  - name: Build Extension
+    run: |
+      cd extension
+      npm run build
+  
+  - name: Package Extension
+    run: |
+      cd extension/dist
+      zip -r ../pinksync-extension-${{ github.sha }}.zip .
+  
+  - name: Upload Artifact
+    uses: actions/upload-artifact@v4
+    with:
+      name: extension-build
+      path: extension/pinksync-extension-${{ github.sha }}.zip
+```
+
+test:
+name: 🧪 E2E Tests
+runs-on: ubuntu-latest
+needs: build
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Setup Node.js
+    uses: actions/setup-node@v4
+    with:
+      node-version: 20.x
+  
+  - name: Install Playwright
+    run: |
+      cd extension
+      npm ci
+      npx playwright install chromium
+  
+  - name: Run E2E Tests
+    run: |
+      cd extension
+      npm run test:e2e
+  
+  - name: Upload Test Results
+    if: always()
+    uses: actions/upload-artifact@v4
+    with:
+      name: playwright-results
+      path: extension/test-results/
+```
+
+publish:
+name: 📦 Publish to Chrome Web Store
+runs-on: ubuntu-latest
+needs: [build, test]
+if: github.ref == ‘refs/heads/main’ && github.event.inputs.publish_store == ‘true’
+steps:
+- uses: actions/checkout@v4
+
+```
+  - name: Download Build Artifact
+    uses: actions/download-artifact@v4
+    with:
+      name: extension-build
+  
+  - name: Publish to Chrome Web Store
+    uses: mnao305/chrome-extension-upload@v4
+    with:
+      file-path: pinksync-extension-${{ github.sha }}.zip
+      extension-id: ${{ secrets.CHROME_EXTENSION_ID }}
+      client-id: ${{ secrets.CHROME_CLIENT_ID }}
+      client-secret: ${{ secrets.CHROME_CLIENT_SECRET }}
+      refresh-token: ${{ secrets.CHROME_REFRESH_TOKEN }}
+  
+  - name: Create GitHub Release
+    uses: softprops/action-gh-release@v1
+    with:
+      tag_name: v${{ github.run_number }}
+      name: Extension v${{ github.run_number }}
+      files: pinksync-extension-${{ github.sha }}.zip
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
