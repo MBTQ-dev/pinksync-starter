@@ -1,4 +1,4 @@
-## Linux Ubuntu + Svix + Xano + PINKSYNC Gateway Architecture
+## Linux Ubuntu + Svix + Xano + PINKSYNC registry Gateway Architecture
 
 ### System Overview
 
@@ -17,7 +17,7 @@ Autonomous project management system using Ubuntu as OS base, Svix for webhook o
 
 - **Svix** - Webhook delivery platform
 - **Xano** - No-code backend and API builder
-- **PINKSYNC Gateway** - Partner/vendor integration hub
+- **PINKSYNC registry Gateway** - Partner/vendor integration hub
 - **Redis** - Message queue and caching
 
 ### Webhook Orchestration with Svix
@@ -25,7 +25,7 @@ Autonomous project management system using Ubuntu as OS base, Svix for webhook o
 Svix handles reliable webhook delivery for all system events:
 
 ```jsx
-// Svix webhook setup for PINKSYNC events
+// Svix webhook setup for PINKSYNC registry events
 const { Svix } = require('svix');
 
 const svix = new Svix(process.env.SVIX_API_KEY);
@@ -80,7 +80,7 @@ Xano serves as the primary backend for project management, API orchestration, an
 - **API Endpoints** - RESTful APIs for all CRUD operations
 - **Business Logic** - No-code functions for workflow automation
 - **Authentication** - JWT-based API authentication
-- **Integrations** - Zapier, [Make.com](http://Make.com), custom webhooks
+- **Automation** - Zapier, [Make.com](http://Make.com), custom webhooks
 
 ### Xano API Structure
 
@@ -107,18 +107,18 @@ GET    /api/webhooks/logs         - View webhook delivery logs
 
 ### PINKSYNC Gateway Configuration
 
-PINKSYNC acts as the central integration hub for connecting partners, vendors, and service providers:
+PINKSYNC acts as the central mirror hub for connecting partners, vendors, and service providers:
 
 ```yaml
-# pinksync-gateway.yml
-# Configuration for PINKSYNC integration gateway
+# pinksync-mirror.yml
+# Configuration for PINKSYNC registry gateway
 
 gateway:
-  name: PINKSYNC Gateway
+  name: PINKSYNC registry Gateway
   version: 1.0.0
-  base_url: https://gateway.pinksync.vr4deaf.org
+  base_url: https://pinksync.mbtq.local
   
-integrations:
+mirror-setup:
   partners:
     - name: "Partner A"
       type: "oauth2"
@@ -165,11 +165,11 @@ message_queue:
 ```bash
 #!/bin/bash
 # setup-ubuntu-pinksync.sh
-# Ubuntu server setup for PINKSYNC Gateway + Xano + Svix
+# Ubuntu server setup for PINKSYNC registry Gateway + Xano + Svix
 
 set -e
 
-echo "🐧 Setting up Ubuntu server for PINKSYNC..."
+echo "🐧 Setting up Ubuntu server for pinksync registry..."
 
 # Update system
 sudo apt update && sudo apt upgrade -y
@@ -206,8 +206,8 @@ cat > docker-compose.yml << 'EOF'
 version: '3.8'
 
 services:
-  pinksync-gateway:
-    image: pinksync/gateway:latest
+  pinksync-registry:
+    image: pinksync/registry:latest
     ports:
       - "3000:3000"
     environment:
@@ -263,7 +263,7 @@ echo "4. Set up SSL with certbot"
 # /etc/nginx/sites-available/pinksync-gateway
 server {
     listen 80;
-    server_name gateway.pinksync.vr4deaf.org;
+    server_name registry.vr4deaf.org;
 
     location / {
         proxy_pass http://localhost:3000;
@@ -321,7 +321,7 @@ No-code function in Xano to handle partner connections:
 - **Step 5:** Register webhook endpoints with Svix for partner events
 - **Step 6:** Call PINKSYNC Gateway API to activate integration
 - **Step 7:** Send confirmation webhook to partner
-- **Step 8:** Log connection event in `integration_logs` table
+- **Step 8:** Log connection event in `mirror_logs` table
 
 ### API Example: Connect New Partner via Xano
 

@@ -1,8 +1,8 @@
-# 🏗️ PINKSYNC Architecture — Complete System Design
+# 🏗️ PINKSYNC Registry — Complete Registry Design
 
 ## 📋 Executive Summary
 
-PINKSYNC is a production-grade integration gateway that connects partners, vendors, and providers through a unified API layer. Built on Azure Container Apps, Xano (backend/database), Svix (webhooks), and Ubuntu (webhook handlers), it provides deterministic deployment, secure authentication, and real-time event streaming.
+PINKSYNC.registry is a production-grade registry gateway that connects partners, vendors, and providers through a unified API layer. Built on Azure Container Apps, Xano (backend/database), Svix (webhooks), and (webhook handlers), it provides deterministic deployment, secure authentication, and real-time event streaming.
 
 ---
 
@@ -21,7 +21,7 @@ PINKSYNC is a production-grade integration gateway that connects partners, vendo
 ### 2. Backend Services
 
 - **Xano Backend:** No-code API and business logic
-- **PINKSYNC Gateway:** Node.js/Express API orchestrator
+- **PINKSYNC.registry Gateway:** Node.js/Express API orchestrator
 - **Webhook Handler:** Event processing service
 - **Svix:** Webhook delivery infrastructure
 
@@ -744,7 +744,7 @@ volumes:
 
 ```yaml
 # .github/workflows/deploy.yml
-name: Deploy PINKSYNC
+name: Deploy PINKSYNC registry container
 
 on:
   push:
